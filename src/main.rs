@@ -1,7 +1,5 @@
 use std::collections::HashMap;
 use std::env;
-use std::error;
-use std::fmt;
 use std::fs;
 use std::time::Instant;
 fn main() {
@@ -26,37 +24,37 @@ fn main() {
         Err(e) => println!("{}", e),
     }
     if display {
-        println!("{:?}", parsed);
+        println!("{:#?}", parsed);
     }
     let duration = start.elapsed();
     println!("Time elapsed in your function is: {:?}", duration);
 }
 
-fn parse_null(input: &str) -> Result<JsonValue, ParserError> {
+fn parse_null(input: &str) -> Result<JsonValue, &str> {
     match input {
         "null" => Ok(JsonValue::JsonNull),
-        _ => Err(ParserError::PE003),
+        _ => Err("Unable to parse JSON null value."),
     }
 }
 
-fn parse_bool(input: &str) -> Result<JsonValue, ParserError> {
+fn parse_bool(input: &str) -> Result<JsonValue, &str> {
     match input {
         "true" => Ok(JsonValue::JsonBoolValue(true)),
         "false" => Ok(JsonValue::JsonBoolValue(false)),
-        _ => return Err(ParserError::PE001),
+        _ => return Err("Unable to parse JSON boolean value."),
     }
 }
 
-fn parse_string(input: &str) -> Result<JsonValue, ParserError> {
+fn parse_string(input: &str) -> Result<JsonValue, &str> {
     if !input.starts_with('"') || !input.ends_with('"') {
-        return Err(ParserError::PE002);
+        return Err("Unable to parse JSON string.");
     }
     if input.len() == 2 {
         return Ok(JsonValue::JsonString(String::new()));
     }
     match input.chars().nth(0).unwrap() == '"' && input.chars().last().unwrap() == '"' {
         true => Ok(JsonValue::JsonString(String::from(input.replace("\"", "")))),
-        false => Err(ParserError::PE002),
+        false => Err("Unable to parse JSON string."),
     }
 }
 
@@ -93,12 +91,12 @@ fn split_by_outer_separator<'i>(input: &'i str, separator: &char) -> Vec<&'i str
     result
 }
 
-fn parse_array(input: &str) -> Result<JsonValue, ParserError> {
+fn parse_array(input: &str) -> Result<JsonValue, &str> {
     let mut values = vec![];
     // trim the new lines and whitespaces
     let input = &input.trim().replace("\n", "").replace("\t", "");
     if !input.starts_with('[') || !input.ends_with(']') {
-        return Err(ParserError::PE005);
+        return Err("Unable to parse JSON array.");
     }
     if input.len() == 2 {
         return Ok(JsonValue::JsonArray(vec![]));
@@ -109,7 +107,7 @@ fn parse_array(input: &str) -> Result<JsonValue, ParserError> {
     for value in input_values {
         match parser(value) {
             Ok(parsed_value) => values.push(parsed_value),
-            _ => return Err(ParserError::PE005),
+            _ => return Err("Unable to parse JSON array."),
         }
     }
     Ok(JsonValue::JsonArray(values))
@@ -132,12 +130,12 @@ fn trim_whitespaces_except_quoted(input: &str) -> String {
     result
 }
 
-fn parse_object(input: &str) -> Result<JsonValue, ParserError> {
+fn parse_object(input: &str) -> Result<JsonValue, &str> {
     let mut values = HashMap::new();
     // trim and remove whitespaces
     let input = trim_whitespaces_except_quoted(&input.trim().replace("\n", "").replace("\t", ""));
     if !input.starts_with('{') || !input.ends_with('}') {
-        return Err(ParserError::PE004);
+        return Err("Unable to parse JSON object.");
     }
     if input.len() == 2 {
         return Ok(JsonValue::JsonObject(HashMap::new()));
@@ -147,33 +145,32 @@ fn parse_object(input: &str) -> Result<JsonValue, ParserError> {
     for value in input_values {
         let split: Vec<&str> = split_by_outer_separator(value, &':'); // separate key/value pair
         if split.len() != 2 {
-            return Err(ParserError::PE004);
+            return Err("Unable to parse JSON object.");
         }
         let key = match parse_string(split[0]) {
             Ok(JsonValue::JsonString(s)) => JsonObjectKey::new(&s.replace("\"", "")),
-            Err(e) => return Err(e),
             _ => unreachable!(),
         };
         match parser(split[1]) {
             Ok(parsed_value) => {
                 values.insert(key, parsed_value);
             }
-            Err(_) => return Err(ParserError::PE004),
+            Err(_) => return Err("Unable to parse JSON object."),
         }
     }
 
     Ok(JsonValue::JsonObject(values))
 }
 
-fn parse_number(input: &str) -> Result<JsonValue, ParserError> {
+fn parse_number(input: &str) -> Result<JsonValue, &str> {
     let parsed = input.parse::<f64>();
     match parsed {
         Ok(result) => Ok(JsonValue::JsonNumber(result)),
-        Err(_) => return Err(ParserError::PE006),
+        Err(_) => return Err("Unable to parse number"),
     }
 }
 
-fn parser(input: &str) -> Result<JsonValue, ParserError> {
+fn parser(input: &str) -> Result<JsonValue, &str> {
     if let Ok(json_bool) = parse_bool(input) {
         return Ok(json_bool);
     } else {
@@ -195,9 +192,9 @@ fn parser(input: &str) -> Result<JsonValue, ParserError> {
     if let Ok(json_number) = parse_number(input) {
         return Ok(json_number);
     } else {
-        println!("{} error \n {}", ParserError::PE006, input);
+        println!("{} error \n", input);
     }
-    return Err(ParserError::AE001);
+    return Err("Unable to parse JSON file");
 }
 
 #[derive(Debug)]
@@ -220,37 +217,6 @@ impl JsonObjectKey {
         JsonObjectKey {
             key: key.to_owned(),
         }
-    }
-}
-
-#[derive(Debug)]
-enum ParserError {
-    PE001,
-    PE002,
-    PE003,
-    PE004,
-    PE005,
-    PE006,
-    AE001,
-}
-
-impl fmt::Display for ParserError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            ParserError::PE001 => write!(f, "PE001- Token is not a valid JSON boolean"),
-            ParserError::PE002 => write!(f, "PE002 Token is not a valid JSON string"),
-            ParserError::PE003 => write!(f, "PE003 Token is not a valid JSON null"),
-            ParserError::PE004 => write!(f, "PE004 -Token is not a valid JSON object"),
-            ParserError::PE005 => write!(f, "PE005 - Token is not a valid JSON array"),
-            ParserError::PE006 => write!(f, "PE006 - Token is not a valid JSON number"),
-            ParserError::AE001 => write!(f, "AE001 -Unable to parse the JSON file"),
-        }
-    }
-}
-
-impl error::Error for ParserError {
-    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
-        None
     }
 }
 
